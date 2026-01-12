@@ -1,12 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { CognitoUserPool } from 'amazon-cognito-identity-js';
-import { cognitoConfig, adminConfig } from './config';
+import { adminConfig, portfolioApiConfig } from './config';
 import CrmDashboard from './components/CrmDashboard';
-
-const userPool = new CognitoUserPool({
-  UserPoolId: cognitoConfig.userPoolId,
-  ClientId: cognitoConfig.clientId,
-});
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -18,50 +12,59 @@ function App() {
     checkAuth();
   }, []);
 
-  const checkAuth = () => {
-    const cognitoUser = userPool.getCurrentUser();
+  const checkAuth = async () => {
+    // Check for portfolio token (same auth as adriengourier.com)
+    const token = localStorage.getItem('portfolio_token');
+    const email = localStorage.getItem('portfolio_email');
     
-    if (cognitoUser) {
-      cognitoUser.getSession((err, session) => {
-        if (err || !session.isValid()) {
-          setIsAuthenticated(false);
-          setLoading(false);
-          return;
-        }
-
-        // Get user attributes
-        cognitoUser.getUserAttributes((err, attributes) => {
-          if (err) {
-            console.error('Error getting user attributes:', err);
-            setLoading(false);
-            return;
-          }
-
-          const email = attributes.find(attr => attr.Name === 'email')?.Value;
-          const name = attributes.find(attr => attr.Name === 'name')?.Value || email;
-          
-          setUser({ email, name });
-          setIsAuthenticated(true);
-          setIsAdmin(adminConfig.adminEmails.includes(email));
-          
-          // Store token for API calls
-          const idToken = session.getIdToken().getJwtToken();
-          localStorage.setItem('idToken', idToken);
-          
-          setLoading(false);
-        });
-      });
-    } else {
+    if (!token || !email) {
       setIsAuthenticated(false);
       setLoading(false);
+      return;
     }
+
+    try {
+      // Verify token with portfolio API
+      const response = await fetch(`${portfolioApiConfig.baseUrl}/auth/verify`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        // Token invalid, clear it
+        localStorage.removeItem('portfolio_token');
+        localStorage.removeItem('portfolio_email');
+        setIsAuthenticated(false);
+        setLoading(false);
+        return;
+      }
+
+      const data = await response.json();
+      
+      if (data.valid) {
+        setUser({ email, name: email });
+        setIsAuthenticated(true);
+        setIsAdmin(adminConfig.adminEmails.includes(email));
+        
+        // Store token for CRM API calls (use same token)
+        localStorage.setItem('idToken', token);
+      } else {
+        setIsAuthenticated(false);
+      }
+    } catch (err) {
+      console.error('Auth verification error:', err);
+      setIsAuthenticated(false);
+    }
+    
+    setLoading(false);
   };
 
   const handleLogout = () => {
-    const cognitoUser = userPool.getCurrentUser();
-    if (cognitoUser) {
-      cognitoUser.signOut();
-    }
+    // Clear all auth tokens
+    localStorage.removeItem('portfolio_token');
+    localStorage.removeItem('portfolio_email');
     localStorage.removeItem('idToken');
     // Redirect back to main portfolio site
     window.location.href = 'https://adriengourier.com';

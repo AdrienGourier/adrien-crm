@@ -14,5 +14,10 @@ export const apiConfig = {
 
 export const adminConfig = {
   // Admin emails allowed to access CRM
-  adminEmails: ['bouzougourier1312@gmail.com'],
+  adminEmails: ['adriengourier@gmail.com', 'bouzougourier1312@gmail.com'],
+};
+
+export const portfolioApiConfig = {
+  // Portfolio API for auth verification
+  baseUrl: 'https://vzgke5g07h.execute-api.us-east-1.amazonaws.com/prod',
 };
