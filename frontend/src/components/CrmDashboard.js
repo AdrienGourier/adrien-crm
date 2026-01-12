@@ -515,17 +515,50 @@ function ProjectCard({ project, priorityColors, onDragStart, onClick, onDelete }
             {project.priority}
           </span>
         )}
-        {project.jiraKey && (
-          <span style={{
-            fontSize: '10px',
-            padding: '2px 6px',
-            borderRadius: '4px',
-            background: 'rgba(0, 82, 204, 0.1)',
-            color: '#0052CC',
-            fontWeight: 500
-          }}>
+        {project.linkedJiraProject && (
+          <a
+            href={`https://gouriertradingproject.atlassian.net/jira/software/projects/${project.linkedJiraProject.key}/boards`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '10px',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              background: 'linear-gradient(135deg, rgba(0, 82, 204, 0.1) 0%, rgba(38, 132, 255, 0.1) 100%)',
+              color: '#0052CC',
+              fontWeight: 500,
+              textDecoration: 'none'
+            }}
+            title={`View ${project.linkedJiraProject.name} in Jira`}
+          >
+            {project.linkedJiraProject.avatarUrl && (
+              <img src={project.linkedJiraProject.avatarUrl} alt="" style={{ width: '12px', height: '12px', borderRadius: '2px' }} />
+            )}
+            {project.linkedJiraProject.key}
+          </a>
+        )}
+        {project.jiraKey && !project.linkedJiraProject && (
+          <a
+            href={`https://gouriertradingproject.atlassian.net/browse/${project.jiraKey}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              fontSize: '10px',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              background: 'rgba(0, 82, 204, 0.1)',
+              color: '#0052CC',
+              fontWeight: 500,
+              textDecoration: 'none'
+            }}
+          >
             {project.jiraKey}
-          </span>
+          </a>
         )}
         {project.progress > 0 && (
           <div style={{ 
@@ -568,10 +601,28 @@ function CreateProjectModal({ onClose, onCreate }) {
     description: '',
     status: 'IDEA',
     priority: 'MEDIUM',
-    jiraKey: ''
+    jiraKey: '',
+    linkedJiraProject: null
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [jiraProjects, setJiraProjects] = useState([]);
+  const [loadingJira, setLoadingJira] = useState(true);
+
+  // Load Jira projects on mount
+  useEffect(() => {
+    const loadJiraProjects = async () => {
+      try {
+        const result = await jiraApi.listProjects();
+        setJiraProjects(result.projects || []);
+      } catch (err) {
+        console.error('Error loading Jira projects:', err);
+      } finally {
+        setLoadingJira(false);
+      }
+    };
+    loadJiraProjects();
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -586,11 +637,25 @@ function CreateProjectModal({ onClose, onCreate }) {
     try {
       await onCreate({
         ...formData,
-        jiraKey: formData.jiraKey || undefined
+        jiraKey: formData.jiraKey || undefined,
+        linkedJiraProject: formData.linkedJiraProject || undefined
       });
     } catch (err) {
       setError(err.message);
       setLoading(false);
+    }
+  };
+
+  const handleJiraProjectSelect = (e) => {
+    const projectKey = e.target.value;
+    if (projectKey) {
+      const selected = jiraProjects.find(p => p.key === projectKey);
+      setFormData({
+        ...formData,
+        linkedJiraProject: selected ? { key: selected.key, name: selected.name, avatarUrl: selected.avatarUrl } : null
+      });
+    } else {
+      setFormData({ ...formData, linkedJiraProject: null });
     }
   };
 
@@ -724,7 +789,63 @@ function CreateProjectModal({ onClose, onCreate }) {
               fontSize: '13px',
               color: 'var(--color-text-secondary)'
             }}>
-              Jira Key (optional)
+              Link to Jira Project (optional)
+            </label>
+            <select
+              value={formData.linkedJiraProject?.key || ''}
+              onChange={handleJiraProjectSelect}
+              className="input"
+              style={{ width: '100%' }}
+              disabled={loadingJira}
+            >
+              <option value="">{loadingJira ? 'Loading Jira projects...' : 'Select a Jira project'}</option>
+              {jiraProjects.map(project => (
+                <option key={project.key} value={project.key}>
+                  {project.key} - {project.name}
+                </option>
+              ))}
+            </select>
+            {formData.linkedJiraProject && (
+              <div style={{ 
+                marginTop: '8px', 
+                padding: '8px 12px', 
+                background: 'rgba(0, 82, 204, 0.05)', 
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                {formData.linkedJiraProject.avatarUrl && (
+                  <img src={formData.linkedJiraProject.avatarUrl} alt="" style={{ width: '20px', height: '20px', borderRadius: '3px' }} />
+                )}
+                <span style={{ fontSize: '13px', color: 'var(--color-text-primary)' }}>
+                  {formData.linkedJiraProject.name}
+                </span>
+                <a 
+                  href={`https://gouriertradingproject.atlassian.net/jira/software/projects/${formData.linkedJiraProject.key}/boards`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ 
+                    marginLeft: 'auto', 
+                    fontSize: '12px', 
+                    color: 'var(--color-accent-primary)',
+                    textDecoration: 'none'
+                  }}
+                >
+                  View Board →
+                </a>
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginBottom: '24px' }}>
+            <label style={{ 
+              display: 'block', 
+              marginBottom: '6px', 
+              fontSize: '13px',
+              color: 'var(--color-text-secondary)'
+            }}>
+              Jira Issue Key (optional)
             </label>
             <input
               type="text"
@@ -770,12 +891,32 @@ function ProjectDetailModal({ project, onClose, onUpdate, onDelete, priorityColo
     status: project.status || 'IDEA',
     priority: project.priority || 'MEDIUM',
     jiraKey: project.jiraKey || '',
+    linkedJiraProject: project.linkedJiraProject || null,
     startDate: project.startDate || '',
     endDate: project.endDate || '',
     progress: project.progress || 0
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [jiraProjects, setJiraProjects] = useState([]);
+  const [loadingJira, setLoadingJira] = useState(true);
+
+  // Load Jira projects when editing
+  useEffect(() => {
+    if (isEditing) {
+      const loadJiraProjects = async () => {
+        try {
+          const result = await jiraApi.listProjects();
+          setJiraProjects(result.projects || []);
+        } catch (err) {
+          console.error('Error loading Jira projects:', err);
+        } finally {
+          setLoadingJira(false);
+        }
+      };
+      loadJiraProjects();
+    }
+  }, [isEditing]);
 
   const statusLabels = {
     IDEA: 'Idea',
@@ -789,6 +930,19 @@ function ProjectDetailModal({ project, onClose, onUpdate, onDelete, priorityColo
     TODO: '#3b82f6',
     IN_PROGRESS: '#f59e0b',
     DONE: '#10b981'
+  };
+
+  const handleJiraProjectSelect = (e) => {
+    const projectKey = e.target.value;
+    if (projectKey) {
+      const selected = jiraProjects.find(p => p.key === projectKey);
+      setFormData({
+        ...formData,
+        linkedJiraProject: selected ? { key: selected.key, name: selected.name, avatarUrl: selected.avatarUrl } : null
+      });
+    } else {
+      setFormData({ ...formData, linkedJiraProject: null });
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -805,6 +959,7 @@ function ProjectDetailModal({ project, onClose, onUpdate, onDelete, priorityColo
       await onUpdate({
         ...formData,
         jiraKey: formData.jiraKey || undefined,
+        linkedJiraProject: formData.linkedJiraProject || undefined,
         startDate: formData.startDate || undefined,
         endDate: formData.endDate || undefined
       });
@@ -1015,7 +1170,7 @@ function ProjectDetailModal({ project, onClose, onUpdate, onDelete, priorityColo
                 </div>
                 <div>
                   <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                    Jira Key
+                    Jira Issue Key
                   </label>
                   <input
                     type="text"
@@ -1026,6 +1181,58 @@ function ProjectDetailModal({ project, onClose, onUpdate, onDelete, priorityColo
                     style={{ width: '100%' }}
                   />
                 </div>
+              </div>
+
+              {/* Jira Project Linking */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                  Linked Jira Project
+                </label>
+                <select
+                  value={formData.linkedJiraProject?.key || ''}
+                  onChange={handleJiraProjectSelect}
+                  className="input"
+                  style={{ width: '100%' }}
+                  disabled={loadingJira}
+                >
+                  <option value="">{loadingJira ? 'Loading Jira projects...' : 'No linked project'}</option>
+                  {jiraProjects.map(proj => (
+                    <option key={proj.key} value={proj.key}>
+                      {proj.key} - {proj.name}
+                    </option>
+                  ))}
+                </select>
+                {formData.linkedJiraProject && (
+                  <div style={{ 
+                    marginTop: '8px', 
+                    padding: '8px 12px', 
+                    background: 'rgba(0, 82, 204, 0.05)', 
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    {formData.linkedJiraProject.avatarUrl && (
+                      <img src={formData.linkedJiraProject.avatarUrl} alt="" style={{ width: '20px', height: '20px', borderRadius: '3px' }} />
+                    )}
+                    <span style={{ fontSize: '13px', color: 'var(--color-text-primary)' }}>
+                      {formData.linkedJiraProject.name}
+                    </span>
+                    <a 
+                      href={`https://gouriertradingproject.atlassian.net/jira/software/projects/${formData.linkedJiraProject.key}/boards`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ 
+                        marginLeft: 'auto', 
+                        fontSize: '12px', 
+                        color: 'var(--color-accent-primary)',
+                        textDecoration: 'none'
+                      }}
+                    >
+                      View Board →
+                    </a>
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px' }}>
@@ -1074,19 +1281,85 @@ function ProjectDetailModal({ project, onClose, onUpdate, onDelete, priorityColo
                     {project.priority}
                   </span>
                 )}
+                {project.linkedJiraProject && (
+                  <a
+                    href={`https://gouriertradingproject.atlassian.net/jira/software/projects/${project.linkedJiraProject.key}/boards`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '12px',
+                      padding: '4px 10px',
+                      borderRadius: '4px',
+                      background: 'linear-gradient(135deg, rgba(0, 82, 204, 0.1) 0%, rgba(38, 132, 255, 0.1) 100%)',
+                      color: '#0052CC',
+                      fontWeight: 500,
+                      textDecoration: 'none'
+                    }}
+                  >
+                    {project.linkedJiraProject.avatarUrl && (
+                      <img src={project.linkedJiraProject.avatarUrl} alt="" style={{ width: '14px', height: '14px', borderRadius: '2px' }} />
+                    )}
+                    {project.linkedJiraProject.key}
+                  </a>
+                )}
                 {project.jiraKey && (
-                  <span style={{
-                    fontSize: '12px',
-                    padding: '4px 10px',
-                    borderRadius: '4px',
-                    background: 'rgba(0, 82, 204, 0.1)',
-                    color: '#0052CC',
-                    fontWeight: 500
-                  }}>
+                  <a
+                    href={`https://gouriertradingproject.atlassian.net/browse/${project.jiraKey}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      fontSize: '12px',
+                      padding: '4px 10px',
+                      borderRadius: '4px',
+                      background: 'rgba(0, 82, 204, 0.1)',
+                      color: '#0052CC',
+                      fontWeight: 500,
+                      textDecoration: 'none'
+                    }}
+                  >
                     {project.jiraKey}
-                  </span>
+                  </a>
                 )}
               </div>
+
+              {/* Linked Jira Project Card */}
+              {project.linkedJiraProject && (
+                <div style={{ 
+                  marginBottom: '20px', 
+                  padding: '12px 16px', 
+                  background: 'linear-gradient(135deg, rgba(0, 82, 204, 0.05) 0%, rgba(38, 132, 255, 0.05) 100%)', 
+                  borderRadius: '8px',
+                  border: '1px solid rgba(0, 82, 204, 0.1)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      {project.linkedJiraProject.avatarUrl && (
+                        <img src={project.linkedJiraProject.avatarUrl} alt="" style={{ width: '28px', height: '28px', borderRadius: '4px' }} />
+                      )}
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                          {project.linkedJiraProject.name}
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                          Linked Jira Project
+                        </div>
+                      </div>
+                    </div>
+                    <a
+                      href={`https://gouriertradingproject.atlassian.net/jira/software/projects/${project.linkedJiraProject.key}/boards`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-secondary"
+                      style={{ fontSize: '12px', padding: '6px 12px', textDecoration: 'none' }}
+                    >
+                      Open Jira Board →
+                    </a>
+                  </div>
+                </div>
+              )}
 
               {project.description && (
                 <div style={{ marginBottom: '20px' }}>
