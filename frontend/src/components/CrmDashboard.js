@@ -881,6 +881,203 @@ function CreateProjectModal({ onClose, onCreate }) {
 }
 
 /**
+ * Jira Status Dashboard Widget - ACRM-29
+ * Displays Jira project status, issue counts, and sprint progress
+ */
+function JiraStatusWidget({ projectKey }) {
+  const [data, setData] = useState({ issues: [], total: 0, statusCounts: {} });
+  const [sprints, setSprints] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        const [issuesResult, sprintsResult] = await Promise.all([
+          jiraApi.getProjectIssues(projectKey, { maxResults: 20 }),
+          jiraApi.getSprints(projectKey).catch(() => ({ sprints: [] }))
+        ]);
+        setData(issuesResult);
+        setSprints(sprintsResult.sprints || []);
+        setError(null);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, [projectKey]);
+
+  const activeSprint = sprints.find(s => s.state === 'active');
+  const totalIssues = data.total || 0;
+  const doneCount = data.statusCounts['Done'] || 0;
+  const inProgressCount = data.statusCounts['In Progress'] || 0;
+  const todoCount = totalIssues - doneCount - inProgressCount;
+
+  if (loading) {
+    return (
+      <div style={{ marginBottom: '20px', padding: '16px', background: 'var(--color-bg-secondary)', borderRadius: '8px', textAlign: 'center' }}>
+        <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Loading Jira status...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ marginBottom: '20px', padding: '16px', background: 'rgba(255,0,0,0.05)', borderRadius: '8px', color: 'var(--color-danger)', fontSize: '13px' }}>
+        Failed to load Jira status: {error}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom: '20px' }}>
+      <h4 style={{ margin: '0 0 12px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+        Jira Status Dashboard
+      </h4>
+
+      {/* Issue Status Counts */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
+        <div style={{ 
+          padding: '12px', 
+          background: 'rgba(59, 130, 246, 0.08)', 
+          borderRadius: '8px',
+          borderLeft: '3px solid #3b82f6'
+        }}>
+          <div style={{ fontSize: '24px', fontWeight: 700, color: '#3b82f6' }}>{todoCount}</div>
+          <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>To Do</div>
+        </div>
+        <div style={{ 
+          padding: '12px', 
+          background: 'rgba(245, 158, 11, 0.08)', 
+          borderRadius: '8px',
+          borderLeft: '3px solid #f59e0b'
+        }}>
+          <div style={{ fontSize: '24px', fontWeight: 700, color: '#f59e0b' }}>{inProgressCount}</div>
+          <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>In Progress</div>
+        </div>
+        <div style={{ 
+          padding: '12px', 
+          background: 'rgba(16, 185, 129, 0.08)', 
+          borderRadius: '8px',
+          borderLeft: '3px solid #10b981'
+        }}>
+          <div style={{ fontSize: '24px', fontWeight: 700, color: '#10b981' }}>{doneCount}</div>
+          <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Done</div>
+        </div>
+      </div>
+
+      {/* Active Sprint Progress */}
+      {activeSprint && (
+        <div style={{ 
+          padding: '12px 16px', 
+          background: 'var(--color-bg-secondary)', 
+          borderRadius: '8px',
+          marginBottom: '16px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-primary)' }}>
+              🏃 {activeSprint.name}
+            </span>
+            <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+              {totalIssues > 0 ? Math.round((doneCount / totalIssues) * 100) : 0}% Complete
+            </span>
+          </div>
+          <div style={{ 
+            height: '6px', 
+            background: 'var(--color-border)', 
+            borderRadius: '3px', 
+            overflow: 'hidden' 
+          }}>
+            <div style={{
+              height: '100%',
+              width: `${totalIssues > 0 ? (doneCount / totalIssues) * 100 : 0}%`,
+              background: 'linear-gradient(90deg, #10b981 0%, #059669 100%)',
+              borderRadius: '3px',
+              transition: 'width 0.3s ease'
+            }} />
+          </div>
+          {activeSprint.endDate && (
+            <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '6px' }}>
+              Ends: {new Date(activeSprint.endDate).toLocaleDateString()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Recent Issues */}
+      {data.issues.length > 0 && (
+        <div>
+          <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
+            Recent Activity ({Math.min(5, data.issues.length)} of {data.total})
+          </div>
+          <div style={{ 
+            background: 'var(--color-bg-secondary)', 
+            borderRadius: '8px',
+            overflow: 'hidden'
+          }}>
+            {data.issues.slice(0, 5).map((issue, idx) => (
+              <a
+                key={issue.key}
+                href={`https://gouriertradingproject.atlassian.net/browse/${issue.key}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '10px 12px',
+                  textDecoration: 'none',
+                  borderBottom: idx < Math.min(4, data.issues.length - 1) ? '1px solid var(--color-border)' : 'none',
+                  transition: 'background 0.2s ease'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.03)'}
+                onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                <span style={{ 
+                  fontSize: '11px', 
+                  fontWeight: 600, 
+                  color: '#0052CC',
+                  minWidth: '70px'
+                }}>
+                  {issue.key}
+                </span>
+                <span style={{ 
+                  flex: 1, 
+                  fontSize: '13px', 
+                  color: 'var(--color-text-primary)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}>
+                  {issue.summary}
+                </span>
+                <span style={{
+                  fontSize: '10px',
+                  padding: '2px 6px',
+                  borderRadius: '10px',
+                  fontWeight: 500,
+                  background: issue.statusCategory === 'Done' ? 'rgba(16, 185, 129, 0.15)' 
+                            : issue.statusCategory === 'In Progress' ? 'rgba(245, 158, 11, 0.15)' 
+                            : 'rgba(100, 100, 100, 0.1)',
+                  color: issue.statusCategory === 'Done' ? '#10b981' 
+                       : issue.statusCategory === 'In Progress' ? '#f59e0b' 
+                       : 'var(--color-text-muted)'
+                }}>
+                  {issue.status}
+                </span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * Project Detail/Edit Modal
  */
 function ProjectDetailModal({ project, onClose, onUpdate, onDelete, priorityColors }) {
@@ -1359,6 +1556,11 @@ function ProjectDetailModal({ project, onClose, onUpdate, onDelete, priorityColo
                     </a>
                   </div>
                 </div>
+              )}
+
+              {/* Jira Status Dashboard Widget - ACRM-29 */}
+              {project.linkedJiraProject && (
+                <JiraStatusWidget projectKey={project.linkedJiraProject.key} />
               )}
 
               {project.description && (
