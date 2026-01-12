@@ -4519,6 +4519,9 @@ function JiraTab() {
   const handleRefresh = async () => {
     setConnectionStatus(prev => ({ ...prev, loading: true }));
     try {
+      // ACRM-31: First invalidate server cache
+      await jiraApi.refreshCache();
+      
       const result = await jiraApi.testConnection();
       setConnectionStatus({
         loading: false,
