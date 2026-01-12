@@ -125,6 +125,20 @@ export const createIssue = async (issueData) => {
   return handleResponse(response);
 };
 
+// ==================== Cache ====================
+
+/**
+ * Refresh/invalidate Jira cache
+ * ACRM-31: Data Caching Layer
+ */
+export const refreshCache = async () => {
+  const response = await fetch(`${JIRA_BASE_URL}/cache/refresh`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+};
+
 // ==================== Export ====================
 
 const jiraApi = {
@@ -135,6 +149,7 @@ const jiraApi = {
   getIssueTypes,
   getSprints,
   createIssue,
+  refreshCache,
 };
 
 export default jiraApi;
