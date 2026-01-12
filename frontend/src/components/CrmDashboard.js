@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Gantt } from '@svar-ui/react-gantt';
 import '@svar-ui/react-gantt/all.css';
 import { listProjects, createProject, updateProject, updateProjectStatus, deleteProject, listIdeas, createIdea, updateIdea, deleteIdea, listTasks, createTask, updateTask, deleteTask, batchUpdateTasks } from '../services/crmApi';
+import jiraApi from '../services/jiraApi';
 
 /**
  * CRM Dashboard - Main entry point for Personal CRM
@@ -514,17 +515,50 @@ function ProjectCard({ project, priorityColors, onDragStart, onClick, onDelete }
             {project.priority}
           </span>
         )}
-        {project.jiraKey && (
-          <span style={{
-            fontSize: '10px',
-            padding: '2px 6px',
-            borderRadius: '4px',
-            background: 'rgba(0, 82, 204, 0.1)',
-            color: '#0052CC',
-            fontWeight: 500
-          }}>
+        {project.linkedJiraProject && (
+          <a
+            href={`https://gouriertradingproject.atlassian.net/jira/software/projects/${project.linkedJiraProject.key}/boards`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '10px',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              background: 'linear-gradient(135deg, rgba(0, 82, 204, 0.1) 0%, rgba(38, 132, 255, 0.1) 100%)',
+              color: '#0052CC',
+              fontWeight: 500,
+              textDecoration: 'none'
+            }}
+            title={`View ${project.linkedJiraProject.name} in Jira`}
+          >
+            {project.linkedJiraProject.avatarUrl && (
+              <img src={project.linkedJiraProject.avatarUrl} alt="" style={{ width: '12px', height: '12px', borderRadius: '2px' }} />
+            )}
+            {project.linkedJiraProject.key}
+          </a>
+        )}
+        {project.jiraKey && !project.linkedJiraProject && (
+          <a
+            href={`https://gouriertradingproject.atlassian.net/browse/${project.jiraKey}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              fontSize: '10px',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              background: 'rgba(0, 82, 204, 0.1)',
+              color: '#0052CC',
+              fontWeight: 500,
+              textDecoration: 'none'
+            }}
+          >
             {project.jiraKey}
-          </span>
+          </a>
         )}
         {project.progress > 0 && (
           <div style={{ 
@@ -567,10 +601,28 @@ function CreateProjectModal({ onClose, onCreate }) {
     description: '',
     status: 'IDEA',
     priority: 'MEDIUM',
-    jiraKey: ''
+    jiraKey: '',
+    linkedJiraProject: null
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [jiraProjects, setJiraProjects] = useState([]);
+  const [loadingJira, setLoadingJira] = useState(true);
+
+  // Load Jira projects on mount
+  useEffect(() => {
+    const loadJiraProjects = async () => {
+      try {
+        const result = await jiraApi.listProjects();
+        setJiraProjects(result.projects || []);
+      } catch (err) {
+        console.error('Error loading Jira projects:', err);
+      } finally {
+        setLoadingJira(false);
+      }
+    };
+    loadJiraProjects();
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -585,11 +637,25 @@ function CreateProjectModal({ onClose, onCreate }) {
     try {
       await onCreate({
         ...formData,
-        jiraKey: formData.jiraKey || undefined
+        jiraKey: formData.jiraKey || undefined,
+        linkedJiraProject: formData.linkedJiraProject || undefined
       });
     } catch (err) {
       setError(err.message);
       setLoading(false);
+    }
+  };
+
+  const handleJiraProjectSelect = (e) => {
+    const projectKey = e.target.value;
+    if (projectKey) {
+      const selected = jiraProjects.find(p => p.key === projectKey);
+      setFormData({
+        ...formData,
+        linkedJiraProject: selected ? { key: selected.key, name: selected.name, avatarUrl: selected.avatarUrl } : null
+      });
+    } else {
+      setFormData({ ...formData, linkedJiraProject: null });
     }
   };
 
@@ -723,7 +789,63 @@ function CreateProjectModal({ onClose, onCreate }) {
               fontSize: '13px',
               color: 'var(--color-text-secondary)'
             }}>
-              Jira Key (optional)
+              Link to Jira Project (optional)
+            </label>
+            <select
+              value={formData.linkedJiraProject?.key || ''}
+              onChange={handleJiraProjectSelect}
+              className="input"
+              style={{ width: '100%' }}
+              disabled={loadingJira}
+            >
+              <option value="">{loadingJira ? 'Loading Jira projects...' : 'Select a Jira project'}</option>
+              {jiraProjects.map(project => (
+                <option key={project.key} value={project.key}>
+                  {project.key} - {project.name}
+                </option>
+              ))}
+            </select>
+            {formData.linkedJiraProject && (
+              <div style={{ 
+                marginTop: '8px', 
+                padding: '8px 12px', 
+                background: 'rgba(0, 82, 204, 0.05)', 
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                {formData.linkedJiraProject.avatarUrl && (
+                  <img src={formData.linkedJiraProject.avatarUrl} alt="" style={{ width: '20px', height: '20px', borderRadius: '3px' }} />
+                )}
+                <span style={{ fontSize: '13px', color: 'var(--color-text-primary)' }}>
+                  {formData.linkedJiraProject.name}
+                </span>
+                <a 
+                  href={`https://gouriertradingproject.atlassian.net/jira/software/projects/${formData.linkedJiraProject.key}/boards`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ 
+                    marginLeft: 'auto', 
+                    fontSize: '12px', 
+                    color: 'var(--color-accent-primary)',
+                    textDecoration: 'none'
+                  }}
+                >
+                  View Board →
+                </a>
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginBottom: '24px' }}>
+            <label style={{ 
+              display: 'block', 
+              marginBottom: '6px', 
+              fontSize: '13px',
+              color: 'var(--color-text-secondary)'
+            }}>
+              Jira Issue Key (optional)
             </label>
             <input
               type="text"
@@ -759,6 +881,203 @@ function CreateProjectModal({ onClose, onCreate }) {
 }
 
 /**
+ * Jira Status Dashboard Widget - ACRM-29
+ * Displays Jira project status, issue counts, and sprint progress
+ */
+function JiraStatusWidget({ projectKey }) {
+  const [data, setData] = useState({ issues: [], total: 0, statusCounts: {} });
+  const [sprints, setSprints] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        const [issuesResult, sprintsResult] = await Promise.all([
+          jiraApi.getProjectIssues(projectKey, { maxResults: 20 }),
+          jiraApi.getSprints(projectKey).catch(() => ({ sprints: [] }))
+        ]);
+        setData(issuesResult);
+        setSprints(sprintsResult.sprints || []);
+        setError(null);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, [projectKey]);
+
+  const activeSprint = sprints.find(s => s.state === 'active');
+  const totalIssues = data.total || 0;
+  const doneCount = data.statusCounts['Done'] || 0;
+  const inProgressCount = data.statusCounts['In Progress'] || 0;
+  const todoCount = totalIssues - doneCount - inProgressCount;
+
+  if (loading) {
+    return (
+      <div style={{ marginBottom: '20px', padding: '16px', background: 'var(--color-bg-secondary)', borderRadius: '8px', textAlign: 'center' }}>
+        <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Loading Jira status...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ marginBottom: '20px', padding: '16px', background: 'rgba(255,0,0,0.05)', borderRadius: '8px', color: 'var(--color-danger)', fontSize: '13px' }}>
+        Failed to load Jira status: {error}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom: '20px' }}>
+      <h4 style={{ margin: '0 0 12px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+        Jira Status Dashboard
+      </h4>
+
+      {/* Issue Status Counts */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
+        <div style={{ 
+          padding: '12px', 
+          background: 'rgba(59, 130, 246, 0.08)', 
+          borderRadius: '8px',
+          borderLeft: '3px solid #3b82f6'
+        }}>
+          <div style={{ fontSize: '24px', fontWeight: 700, color: '#3b82f6' }}>{todoCount}</div>
+          <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>To Do</div>
+        </div>
+        <div style={{ 
+          padding: '12px', 
+          background: 'rgba(245, 158, 11, 0.08)', 
+          borderRadius: '8px',
+          borderLeft: '3px solid #f59e0b'
+        }}>
+          <div style={{ fontSize: '24px', fontWeight: 700, color: '#f59e0b' }}>{inProgressCount}</div>
+          <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>In Progress</div>
+        </div>
+        <div style={{ 
+          padding: '12px', 
+          background: 'rgba(16, 185, 129, 0.08)', 
+          borderRadius: '8px',
+          borderLeft: '3px solid #10b981'
+        }}>
+          <div style={{ fontSize: '24px', fontWeight: 700, color: '#10b981' }}>{doneCount}</div>
+          <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Done</div>
+        </div>
+      </div>
+
+      {/* Active Sprint Progress */}
+      {activeSprint && (
+        <div style={{ 
+          padding: '12px 16px', 
+          background: 'var(--color-bg-secondary)', 
+          borderRadius: '8px',
+          marginBottom: '16px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text-primary)' }}>
+              🏃 {activeSprint.name}
+            </span>
+            <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+              {totalIssues > 0 ? Math.round((doneCount / totalIssues) * 100) : 0}% Complete
+            </span>
+          </div>
+          <div style={{ 
+            height: '6px', 
+            background: 'var(--color-border)', 
+            borderRadius: '3px', 
+            overflow: 'hidden' 
+          }}>
+            <div style={{
+              height: '100%',
+              width: `${totalIssues > 0 ? (doneCount / totalIssues) * 100 : 0}%`,
+              background: 'linear-gradient(90deg, #10b981 0%, #059669 100%)',
+              borderRadius: '3px',
+              transition: 'width 0.3s ease'
+            }} />
+          </div>
+          {activeSprint.endDate && (
+            <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '6px' }}>
+              Ends: {new Date(activeSprint.endDate).toLocaleDateString()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Recent Issues */}
+      {data.issues.length > 0 && (
+        <div>
+          <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
+            Recent Activity ({Math.min(5, data.issues.length)} of {data.total})
+          </div>
+          <div style={{ 
+            background: 'var(--color-bg-secondary)', 
+            borderRadius: '8px',
+            overflow: 'hidden'
+          }}>
+            {data.issues.slice(0, 5).map((issue, idx) => (
+              <a
+                key={issue.key}
+                href={`https://gouriertradingproject.atlassian.net/browse/${issue.key}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '10px 12px',
+                  textDecoration: 'none',
+                  borderBottom: idx < Math.min(4, data.issues.length - 1) ? '1px solid var(--color-border)' : 'none',
+                  transition: 'background 0.2s ease'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.03)'}
+                onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                <span style={{ 
+                  fontSize: '11px', 
+                  fontWeight: 600, 
+                  color: '#0052CC',
+                  minWidth: '70px'
+                }}>
+                  {issue.key}
+                </span>
+                <span style={{ 
+                  flex: 1, 
+                  fontSize: '13px', 
+                  color: 'var(--color-text-primary)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}>
+                  {issue.summary}
+                </span>
+                <span style={{
+                  fontSize: '10px',
+                  padding: '2px 6px',
+                  borderRadius: '10px',
+                  fontWeight: 500,
+                  background: issue.statusCategory === 'Done' ? 'rgba(16, 185, 129, 0.15)' 
+                            : issue.statusCategory === 'In Progress' ? 'rgba(245, 158, 11, 0.15)' 
+                            : 'rgba(100, 100, 100, 0.1)',
+                  color: issue.statusCategory === 'Done' ? '#10b981' 
+                       : issue.statusCategory === 'In Progress' ? '#f59e0b' 
+                       : 'var(--color-text-muted)'
+                }}>
+                  {issue.status}
+                </span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * Project Detail/Edit Modal
  */
 function ProjectDetailModal({ project, onClose, onUpdate, onDelete, priorityColors }) {
@@ -769,12 +1088,32 @@ function ProjectDetailModal({ project, onClose, onUpdate, onDelete, priorityColo
     status: project.status || 'IDEA',
     priority: project.priority || 'MEDIUM',
     jiraKey: project.jiraKey || '',
+    linkedJiraProject: project.linkedJiraProject || null,
     startDate: project.startDate || '',
     endDate: project.endDate || '',
     progress: project.progress || 0
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [jiraProjects, setJiraProjects] = useState([]);
+  const [loadingJira, setLoadingJira] = useState(true);
+
+  // Load Jira projects when editing
+  useEffect(() => {
+    if (isEditing) {
+      const loadJiraProjects = async () => {
+        try {
+          const result = await jiraApi.listProjects();
+          setJiraProjects(result.projects || []);
+        } catch (err) {
+          console.error('Error loading Jira projects:', err);
+        } finally {
+          setLoadingJira(false);
+        }
+      };
+      loadJiraProjects();
+    }
+  }, [isEditing]);
 
   const statusLabels = {
     IDEA: 'Idea',
@@ -788,6 +1127,19 @@ function ProjectDetailModal({ project, onClose, onUpdate, onDelete, priorityColo
     TODO: '#3b82f6',
     IN_PROGRESS: '#f59e0b',
     DONE: '#10b981'
+  };
+
+  const handleJiraProjectSelect = (e) => {
+    const projectKey = e.target.value;
+    if (projectKey) {
+      const selected = jiraProjects.find(p => p.key === projectKey);
+      setFormData({
+        ...formData,
+        linkedJiraProject: selected ? { key: selected.key, name: selected.name, avatarUrl: selected.avatarUrl } : null
+      });
+    } else {
+      setFormData({ ...formData, linkedJiraProject: null });
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -804,6 +1156,7 @@ function ProjectDetailModal({ project, onClose, onUpdate, onDelete, priorityColo
       await onUpdate({
         ...formData,
         jiraKey: formData.jiraKey || undefined,
+        linkedJiraProject: formData.linkedJiraProject || undefined,
         startDate: formData.startDate || undefined,
         endDate: formData.endDate || undefined
       });
@@ -1014,7 +1367,7 @@ function ProjectDetailModal({ project, onClose, onUpdate, onDelete, priorityColo
                 </div>
                 <div>
                   <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                    Jira Key
+                    Jira Issue Key
                   </label>
                   <input
                     type="text"
@@ -1025,6 +1378,58 @@ function ProjectDetailModal({ project, onClose, onUpdate, onDelete, priorityColo
                     style={{ width: '100%' }}
                   />
                 </div>
+              </div>
+
+              {/* Jira Project Linking */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                  Linked Jira Project
+                </label>
+                <select
+                  value={formData.linkedJiraProject?.key || ''}
+                  onChange={handleJiraProjectSelect}
+                  className="input"
+                  style={{ width: '100%' }}
+                  disabled={loadingJira}
+                >
+                  <option value="">{loadingJira ? 'Loading Jira projects...' : 'No linked project'}</option>
+                  {jiraProjects.map(proj => (
+                    <option key={proj.key} value={proj.key}>
+                      {proj.key} - {proj.name}
+                    </option>
+                  ))}
+                </select>
+                {formData.linkedJiraProject && (
+                  <div style={{ 
+                    marginTop: '8px', 
+                    padding: '8px 12px', 
+                    background: 'rgba(0, 82, 204, 0.05)', 
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    {formData.linkedJiraProject.avatarUrl && (
+                      <img src={formData.linkedJiraProject.avatarUrl} alt="" style={{ width: '20px', height: '20px', borderRadius: '3px' }} />
+                    )}
+                    <span style={{ fontSize: '13px', color: 'var(--color-text-primary)' }}>
+                      {formData.linkedJiraProject.name}
+                    </span>
+                    <a 
+                      href={`https://gouriertradingproject.atlassian.net/jira/software/projects/${formData.linkedJiraProject.key}/boards`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ 
+                        marginLeft: 'auto', 
+                        fontSize: '12px', 
+                        color: 'var(--color-accent-primary)',
+                        textDecoration: 'none'
+                      }}
+                    >
+                      View Board →
+                    </a>
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px' }}>
@@ -1073,19 +1478,90 @@ function ProjectDetailModal({ project, onClose, onUpdate, onDelete, priorityColo
                     {project.priority}
                   </span>
                 )}
+                {project.linkedJiraProject && (
+                  <a
+                    href={`https://gouriertradingproject.atlassian.net/jira/software/projects/${project.linkedJiraProject.key}/boards`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '12px',
+                      padding: '4px 10px',
+                      borderRadius: '4px',
+                      background: 'linear-gradient(135deg, rgba(0, 82, 204, 0.1) 0%, rgba(38, 132, 255, 0.1) 100%)',
+                      color: '#0052CC',
+                      fontWeight: 500,
+                      textDecoration: 'none'
+                    }}
+                  >
+                    {project.linkedJiraProject.avatarUrl && (
+                      <img src={project.linkedJiraProject.avatarUrl} alt="" style={{ width: '14px', height: '14px', borderRadius: '2px' }} />
+                    )}
+                    {project.linkedJiraProject.key}
+                  </a>
+                )}
                 {project.jiraKey && (
-                  <span style={{
-                    fontSize: '12px',
-                    padding: '4px 10px',
-                    borderRadius: '4px',
-                    background: 'rgba(0, 82, 204, 0.1)',
-                    color: '#0052CC',
-                    fontWeight: 500
-                  }}>
+                  <a
+                    href={`https://gouriertradingproject.atlassian.net/browse/${project.jiraKey}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      fontSize: '12px',
+                      padding: '4px 10px',
+                      borderRadius: '4px',
+                      background: 'rgba(0, 82, 204, 0.1)',
+                      color: '#0052CC',
+                      fontWeight: 500,
+                      textDecoration: 'none'
+                    }}
+                  >
                     {project.jiraKey}
-                  </span>
+                  </a>
                 )}
               </div>
+
+              {/* Linked Jira Project Card */}
+              {project.linkedJiraProject && (
+                <div style={{ 
+                  marginBottom: '20px', 
+                  padding: '12px 16px', 
+                  background: 'linear-gradient(135deg, rgba(0, 82, 204, 0.05) 0%, rgba(38, 132, 255, 0.05) 100%)', 
+                  borderRadius: '8px',
+                  border: '1px solid rgba(0, 82, 204, 0.1)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      {project.linkedJiraProject.avatarUrl && (
+                        <img src={project.linkedJiraProject.avatarUrl} alt="" style={{ width: '28px', height: '28px', borderRadius: '4px' }} />
+                      )}
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                          {project.linkedJiraProject.name}
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                          Linked Jira Project
+                        </div>
+                      </div>
+                    </div>
+                    <a
+                      href={`https://gouriertradingproject.atlassian.net/jira/software/projects/${project.linkedJiraProject.key}/boards`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-secondary"
+                      style={{ fontSize: '12px', padding: '6px 12px', textDecoration: 'none' }}
+                    >
+                      Open Jira Board →
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {/* Jira Status Dashboard Widget - ACRM-29 */}
+              {project.linkedJiraProject && (
+                <JiraStatusWidget projectKey={project.linkedJiraProject.key} />
+              )}
 
               {project.description && (
                 <div style={{ marginBottom: '20px' }}>
@@ -1190,6 +1666,7 @@ function IdeasTab() {
   const [showCaptureModal, setShowCaptureModal] = useState(false);
   const [selectedIdea, setSelectedIdea] = useState(null);
   const [ideaToConvert, setIdeaToConvert] = useState(null);
+  const [ideaToJira, setIdeaToJira] = useState(null); // ACRM-30
   const [statusFilter, setStatusFilter] = useState('');
 
   const statusConfig = {
@@ -1272,6 +1749,25 @@ function IdeasTab() {
       return newProject;
     } catch (err) {
       console.error('Error converting idea to project:', err);
+      throw err;
+    }
+  };
+
+  // ACRM-30: Handle Jira ticket creation
+  const handleCreateJiraTicket = async (jiraKey) => {
+    try {
+      // Update the idea with the Jira key and mark as processed
+      const updatedIdea = await updateIdea(ideaToJira.ideaId, {
+        jiraKey: jiraKey,
+        status: 'PROCESSED'
+      });
+      
+      // Update local state
+      setIdeas(prev => prev.map(i => i.ideaId === ideaToJira.ideaId ? updatedIdea : i));
+      setIdeaToJira(null);
+      setSelectedIdea(null);
+    } catch (err) {
+      console.error('Error updating idea with Jira key:', err);
       throw err;
     }
   };
@@ -1383,6 +1879,10 @@ function IdeasTab() {
             setIdeaToConvert(selectedIdea);
             setSelectedIdea(null);
           }}
+          onCreateJiraTicket={() => {
+            setIdeaToJira(selectedIdea);
+            setSelectedIdea(null);
+          }}
         />
       )}
 
@@ -1392,6 +1892,15 @@ function IdeasTab() {
           idea={ideaToConvert}
           onClose={() => setIdeaToConvert(null)}
           onConvert={(projectData) => handleConvertToProject(projectData, ideaToConvert.ideaId)}
+        />
+      )}
+
+      {/* Create Jira Ticket Modal - ACRM-30 */}
+      {ideaToJira && (
+        <CreateJiraTicketModal
+          idea={ideaToJira}
+          onClose={() => setIdeaToJira(null)}
+          onCreated={handleCreateJiraTicket}
         />
       )}
     </div>
@@ -1670,7 +2179,7 @@ function CaptureIdeaModal({ onClose, onCreate }) {
 /**
  * Idea Detail Modal
  */
-function IdeaDetailModal({ idea, statusConfig, onClose, onUpdate, onDelete, onConvertToProject }) {
+function IdeaDetailModal({ idea, statusConfig, onClose, onUpdate, onDelete, onConvertToProject, onCreateJiraTicket }) {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
     title: idea.title || '',
@@ -1857,17 +2366,32 @@ function IdeaDetailModal({ idea, statusConfig, onClose, onUpdate, onDelete, onCo
 
               {/* Convert to Project Button */}
               {canConvert && (
-                <div style={{ marginTop: '20px' }}>
+                <div style={{ marginTop: '20px', display: 'flex', gap: '12px' }}>
                   <button
                     onClick={onConvertToProject}
                     className="btn btn-primary"
-                    style={{ width: '100%' }}
+                    style={{ flex: 1 }}
                   >
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ marginRight: '8px' }}>
                       <path d="M14.5 3a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h13zm-13-1A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2h-13z"/>
                       <path d="M3 5.5a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5zM3 8a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9A.5.5 0 0 1 3 8zm0 2.5a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1-.5-.5z"/>
                     </svg>
                     Convert to Project
+                  </button>
+                  <button
+                    onClick={onCreateJiraTicket}
+                    className="btn btn-secondary"
+                    style={{ 
+                      flex: 1,
+                      background: 'linear-gradient(135deg, rgba(0, 82, 204, 0.1) 0%, rgba(38, 132, 255, 0.1) 100%)',
+                      border: '1px solid rgba(0, 82, 204, 0.3)',
+                      color: '#0052CC'
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ marginRight: '8px' }}>
+                      <path d="M12.001 2c-5.523 0-10 4.477-10 10s4.477 10 10 10 10-4.477 10-10-4.477-10-10-10zm0 18c-4.411 0-8-3.589-8-8s3.589-8 8-8 8 3.589 8 8-3.589 8-8 8zm1-13h-2v4h-4v2h4v4h2v-4h4v-2h-4z"/>
+                    </svg>
+                    Create Jira Ticket
                   </button>
                 </div>
               )}
@@ -1884,6 +2408,37 @@ function IdeaDetailModal({ idea, statusConfig, onClose, onUpdate, onDelete, onCo
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#10b981', fontSize: '13px' }}>
                     <span>✓</span>
                     <span>Converted to project</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Jira ticket indicator */}
+              {idea.jiraKey && (
+                <div style={{ 
+                  marginTop: idea.status === 'PROCESSED' ? '12px' : '20px', 
+                  padding: '12px', 
+                  background: 'rgba(0, 82, 204, 0.05)', 
+                  borderRadius: '6px',
+                  border: '1px solid rgba(0, 82, 204, 0.15)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#0052CC', fontSize: '13px' }}>
+                      <span style={{ fontWeight: 600 }}>J</span>
+                      <span>Jira ticket created</span>
+                    </div>
+                    <a 
+                      href={`https://gouriertradingproject.atlassian.net/browse/${idea.jiraKey}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ 
+                        color: '#0052CC', 
+                        fontWeight: 500, 
+                        fontSize: '13px',
+                        textDecoration: 'none'
+                      }}
+                    >
+                      {idea.jiraKey} →
+                    </a>
                   </div>
                 </div>
               )}
@@ -2104,6 +2659,277 @@ function ConvertToProjectModal({ idea, onClose, onConvert }) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Create Jira Ticket Modal - ACRM-30
+ * Allows converting prompts/ideas into Jira tickets
+ */
+function CreateJiraTicketModal({ idea, onClose, onCreated }) {
+  const [formData, setFormData] = useState({
+    summary: idea.title || '',
+    description: idea.content || '',
+    projectKey: '',
+    issueType: 'Task',
+    priority: idea.priority === 'CRITICAL' ? 'Highest' : idea.priority === 'HIGH' ? 'High' : idea.priority === 'LOW' ? 'Low' : 'Medium'
+  });
+  const [jiraProjects, setJiraProjects] = useState([]);
+  const [issueTypes, setIssueTypes] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loadingProjects, setLoadingProjects] = useState(true);
+  const [loadingTypes, setLoadingTypes] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Load Jira projects on mount
+  useEffect(() => {
+    const loadProjects = async () => {
+      try {
+        const result = await jiraApi.listProjects();
+        setJiraProjects(result.projects || []);
+      } catch (err) {
+        setError('Failed to load Jira projects: ' + err.message);
+      } finally {
+        setLoadingProjects(false);
+      }
+    };
+    loadProjects();
+  }, []);
+
+  // Load issue types when project is selected
+  useEffect(() => {
+    if (formData.projectKey) {
+      const loadIssueTypes = async () => {
+        setLoadingTypes(true);
+        try {
+          const result = await jiraApi.getIssueTypes(formData.projectKey);
+          setIssueTypes(result.issueTypes || []);
+        } catch (err) {
+          console.error('Failed to load issue types:', err);
+        } finally {
+          setLoadingTypes(false);
+        }
+      };
+      loadIssueTypes();
+    }
+  }, [formData.projectKey]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!formData.summary.trim()) {
+      setError('Summary is required');
+      return;
+    }
+    if (!formData.projectKey) {
+      setError('Please select a Jira project');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await jiraApi.createIssue({
+        projectKey: formData.projectKey,
+        summary: formData.summary,
+        issueType: formData.issueType,
+        description: formData.description,
+        priority: formData.priority
+      });
+
+      await onCreated(result.key);
+    } catch (err) {
+      setError(err.message);
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,0.6)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000
+    }} onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--color-bg-secondary)',
+          borderRadius: '12px',
+          width: '100%',
+          maxWidth: '550px',
+          maxHeight: '90vh',
+          overflow: 'auto',
+          border: '1px solid var(--color-border)'
+        }}
+      >
+        {/* Header */}
+        <div style={{
+          padding: '20px 24px',
+          borderBottom: '1px solid var(--color-border)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          background: 'linear-gradient(135deg, rgba(0, 82, 204, 0.05) 0%, rgba(38, 132, 255, 0.05) 100%)'
+        }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '6px',
+            background: 'linear-gradient(135deg, #0052CC 0%, #2684FF 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'white',
+            fontWeight: 700,
+            fontSize: '14px'
+          }}>
+            J
+          </div>
+          <div>
+            <h3 style={{ margin: 0, color: 'var(--color-text-primary)' }}>Create Jira Ticket</h3>
+            <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+              from idea: {idea.title?.substring(0, 40)}{idea.title?.length > 40 ? '...' : ''}
+            </p>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div style={{ padding: '24px' }}>
+          {error && (
+            <div style={{
+              padding: '10px 12px',
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: '6px',
+              color: '#ef4444',
+              marginBottom: '16px',
+              fontSize: '13px'
+            }}>
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit}>
+            {/* Project Selection */}
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                Jira Project *
+              </label>
+              <select
+                value={formData.projectKey}
+                onChange={(e) => setFormData({ ...formData, projectKey: e.target.value, issueType: 'Task' })}
+                className="input"
+                style={{ width: '100%' }}
+                disabled={loadingProjects}
+              >
+                <option value="">{loadingProjects ? 'Loading projects...' : 'Select a project'}</option>
+                {jiraProjects.map(p => (
+                  <option key={p.key} value={p.key}>{p.key} - {p.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Issue Type Selection */}
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                Issue Type *
+              </label>
+              <select
+                value={formData.issueType}
+                onChange={(e) => setFormData({ ...formData, issueType: e.target.value })}
+                className="input"
+                style={{ width: '100%' }}
+                disabled={!formData.projectKey || loadingTypes}
+              >
+                {loadingTypes ? (
+                  <option value="">Loading issue types...</option>
+                ) : issueTypes.length > 0 ? (
+                  issueTypes.filter(t => !t.subtask).map(t => (
+                    <option key={t.id} value={t.name}>{t.name}</option>
+                  ))
+                ) : (
+                  <>
+                    <option value="Epic">Epic</option>
+                    <option value="Story">Story</option>
+                    <option value="Task">Task</option>
+                    <option value="Bug">Bug</option>
+                  </>
+                )}
+              </select>
+            </div>
+
+            {/* Summary */}
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                Summary *
+              </label>
+              <input
+                type="text"
+                value={formData.summary}
+                onChange={(e) => setFormData({ ...formData, summary: e.target.value })}
+                className="input"
+                style={{ width: '100%' }}
+                placeholder="Brief summary of the ticket"
+              />
+            </div>
+
+            {/* Description */}
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                Description
+              </label>
+              <textarea
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="input"
+                style={{ width: '100%', minHeight: '120px', resize: 'vertical' }}
+                placeholder="Detailed description..."
+              />
+            </div>
+
+            {/* Priority */}
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                Priority
+              </label>
+              <select
+                value={formData.priority}
+                onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
+                className="input"
+                style={{ width: '100%' }}
+              >
+                <option value="Lowest">Lowest</option>
+                <option value="Low">Low</option>
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+                <option value="Highest">Highest</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-secondary" onClick={onClose} disabled={loading}>
+                Cancel
+              </button>
+              <button 
+                type="submit" 
+                className="btn btn-primary" 
+                disabled={loading || !formData.projectKey}
+                style={{ 
+                  background: 'linear-gradient(135deg, #0052CC 0%, #2684FF 100%)',
+                  border: 'none'
+                }}
+              >
+                {loading ? 'Creating...' : 'Create Ticket'}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );
@@ -3634,8 +4460,91 @@ function EditTaskModal({ task, projects, allTasks, links, onClose, onTaskUpdated
 
 /**
  * Jira Tab - Synchronization status and controls
+ * ACRM-27: Jira API Integration
  */
 function JiraTab() {
+  const [connectionStatus, setConnectionStatus] = useState({ loading: true, connected: false, user: null, error: null });
+  const [jiraProjects, setJiraProjects] = useState([]);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [projectIssues, setProjectIssues] = useState({ issues: [], total: 0, statusCounts: {} });
+  const [loadingIssues, setLoadingIssues] = useState(false);
+
+  // Test Jira connection on mount
+  useEffect(() => {
+    const testConnection = async () => {
+      try {
+        const result = await jiraApi.testConnection();
+        setConnectionStatus({
+          loading: false,
+          connected: result.connected,
+          user: result.user,
+          error: null
+        });
+        
+        if (result.connected) {
+          // Load Jira projects
+          const projectsResult = await jiraApi.listProjects();
+          setJiraProjects(projectsResult.projects || []);
+        }
+      } catch (err) {
+        setConnectionStatus({
+          loading: false,
+          connected: false,
+          user: null,
+          error: err.message
+        });
+      }
+    };
+    testConnection();
+  }, []);
+
+  // Load issues when a project is selected
+  const loadProjectIssues = async (projectKey) => {
+    setLoadingIssues(true);
+    try {
+      const result = await jiraApi.getProjectIssues(projectKey, { maxResults: 50 });
+      setProjectIssues(result);
+    } catch (err) {
+      console.error('Error loading issues:', err);
+    } finally {
+      setLoadingIssues(false);
+    }
+  };
+
+  const handleProjectSelect = (project) => {
+    setSelectedProject(project);
+    loadProjectIssues(project.key);
+  };
+
+  const handleRefresh = async () => {
+    setConnectionStatus(prev => ({ ...prev, loading: true }));
+    try {
+      const result = await jiraApi.testConnection();
+      setConnectionStatus({
+        loading: false,
+        connected: result.connected,
+        user: result.user,
+        error: null
+      });
+      
+      if (result.connected) {
+        const projectsResult = await jiraApi.listProjects();
+        setJiraProjects(projectsResult.projects || []);
+        
+        if (selectedProject) {
+          loadProjectIssues(selectedProject.key);
+        }
+      }
+    } catch (err) {
+      setConnectionStatus({
+        loading: false,
+        connected: false,
+        user: null,
+        error: err.message
+      });
+    }
+  };
+
   return (
     <div>
       <div style={{ 
@@ -3645,12 +4554,12 @@ function JiraTab() {
         marginBottom: '24px'
       }}>
         <h2 style={{ margin: 0, color: 'var(--color-text-primary)' }}>Jira Integration</h2>
-        <button className="btn btn-secondary">
+        <button className="btn btn-secondary" onClick={handleRefresh} disabled={connectionStatus.loading}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ marginRight: '6px' }}>
             <path fillRule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
             <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
           </svg>
-          Sync Now
+          {connectionStatus.loading ? 'Syncing...' : 'Sync Now'}
         </button>
       </div>
 
@@ -3676,7 +4585,7 @@ function JiraTab() {
               Jira Cloud
             </div>
             <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
-              gouriertradingproject.atlassian.net
+              {connectionStatus.user?.emailAddress || 'gouriertradingproject.atlassian.net'}
             </div>
           </div>
           <div style={{ 
@@ -3684,36 +4593,159 @@ function JiraTab() {
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            color: 'var(--color-accent-success)',
+            color: connectionStatus.loading 
+              ? 'var(--color-text-muted)' 
+              : connectionStatus.connected 
+                ? 'var(--color-accent-success)' 
+                : 'var(--color-danger)',
             fontSize: '13px'
           }}>
             <div style={{ 
               width: '8px', 
               height: '8px', 
               borderRadius: '50%', 
-              background: 'var(--color-accent-success)' 
+              background: connectionStatus.loading 
+                ? 'var(--color-text-muted)' 
+                : connectionStatus.connected 
+                  ? 'var(--color-accent-success)' 
+                  : 'var(--color-danger)'
             }} />
-            Connected
+            {connectionStatus.loading ? 'Checking...' : connectionStatus.connected ? 'Connected' : 'Disconnected'}
           </div>
         </div>
+        {connectionStatus.error && (
+          <div style={{ marginTop: '12px', padding: '8px', background: 'rgba(255,0,0,0.1)', borderRadius: '4px', color: 'var(--color-danger)', fontSize: '13px' }}>
+            Error: {connectionStatus.error}
+          </div>
+        )}
       </div>
 
-      {/* Linked Projects */}
+      {/* Jira Projects Grid */}
       <h3 style={{ 
         color: 'var(--color-text-primary)', 
         marginBottom: '16px',
         fontSize: '16px'
       }}>
-        Linked Projects
+        Jira Projects ({jiraProjects.length})
       </h3>
       
-      <div className="card" style={{ textAlign: 'center', padding: '32px' }}>
-        <p style={{ color: 'var(--color-text-muted)', margin: 0 }}>
-          No projects linked to Jira yet.
-          <br />
-          Link a CRM project to a Jira project to enable sync.
-        </p>
-      </div>
+      {jiraProjects.length === 0 ? (
+        <div className="card" style={{ textAlign: 'center', padding: '32px' }}>
+          <p style={{ color: 'var(--color-text-muted)', margin: 0 }}>
+            {connectionStatus.loading ? 'Loading projects...' : 'No Jira projects found.'}
+          </p>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+          {jiraProjects.map(project => (
+            <div 
+              key={project.id} 
+              className="card" 
+              onClick={() => handleProjectSelect(project)}
+              style={{ 
+                cursor: 'pointer', 
+                border: selectedProject?.key === project.key ? '2px solid var(--color-accent-primary)' : '1px solid var(--color-border)',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {project.avatarUrl && (
+                  <img src={project.avatarUrl} alt="" style={{ width: '32px', height: '32px', borderRadius: '4px' }} />
+                )}
+                <div>
+                  <div style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>{project.name}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{project.key}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Selected Project Issues */}
+      {selectedProject && (
+        <>
+          <h3 style={{ 
+            color: 'var(--color-text-primary)', 
+            marginBottom: '16px',
+            fontSize: '16px'
+          }}>
+            {selectedProject.name} Issues ({projectIssues.total})
+          </h3>
+
+          {/* Status counts */}
+          {Object.keys(projectIssues.statusCounts).length > 0 && (
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+              {Object.entries(projectIssues.statusCounts).map(([status, count]) => (
+                <div key={status} className="card" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ 
+                    width: '8px', 
+                    height: '8px', 
+                    borderRadius: '50%', 
+                    background: status === 'Done' ? 'var(--color-accent-success)' : status === 'In Progress' ? 'var(--color-accent-warning)' : 'var(--color-text-muted)'
+                  }} />
+                  <span style={{ fontSize: '13px' }}>{status}: <strong>{count}</strong></span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Issues table */}
+          <div className="card" style={{ overflow: 'auto' }}>
+            {loadingIssues ? (
+              <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '24px' }}>Loading issues...</p>
+            ) : projectIssues.issues.length === 0 ? (
+              <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '24px' }}>No issues found.</p>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
+                    <th style={{ textAlign: 'left', padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 500, fontSize: '13px' }}>Key</th>
+                    <th style={{ textAlign: 'left', padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 500, fontSize: '13px' }}>Summary</th>
+                    <th style={{ textAlign: 'left', padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 500, fontSize: '13px' }}>Type</th>
+                    <th style={{ textAlign: 'left', padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 500, fontSize: '13px' }}>Status</th>
+                    <th style={{ textAlign: 'left', padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 500, fontSize: '13px' }}>Assignee</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {projectIssues.issues.map(issue => (
+                    <tr key={issue.key} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                      <td style={{ padding: '10px 8px' }}>
+                        <a 
+                          href={`https://gouriertradingproject.atlassian.net/browse/${issue.key}`} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          style={{ color: 'var(--color-accent-primary)', textDecoration: 'none', fontWeight: 500 }}
+                        >
+                          {issue.key}
+                        </a>
+                      </td>
+                      <td style={{ padding: '10px 8px', color: 'var(--color-text-primary)', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {issue.summary}
+                      </td>
+                      <td style={{ padding: '10px 8px', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{issue.issueType}</td>
+                      <td style={{ padding: '10px 8px' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          fontWeight: 500,
+                          background: issue.statusCategory === 'Done' ? 'rgba(0,200,83,0.15)' : issue.statusCategory === 'In Progress' ? 'rgba(255,171,0,0.15)' : 'rgba(128,128,128,0.15)',
+                          color: issue.statusCategory === 'Done' ? 'var(--color-accent-success)' : issue.statusCategory === 'In Progress' ? 'var(--color-accent-warning)' : 'var(--color-text-secondary)'
+                        }}>
+                          {issue.status}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 8px', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{issue.assignee || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
