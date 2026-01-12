@@ -1666,6 +1666,7 @@ function IdeasTab() {
   const [showCaptureModal, setShowCaptureModal] = useState(false);
   const [selectedIdea, setSelectedIdea] = useState(null);
   const [ideaToConvert, setIdeaToConvert] = useState(null);
+  const [ideaToJira, setIdeaToJira] = useState(null); // ACRM-30
   const [statusFilter, setStatusFilter] = useState('');
 
   const statusConfig = {
@@ -1748,6 +1749,25 @@ function IdeasTab() {
       return newProject;
     } catch (err) {
       console.error('Error converting idea to project:', err);
+      throw err;
+    }
+  };
+
+  // ACRM-30: Handle Jira ticket creation
+  const handleCreateJiraTicket = async (jiraKey) => {
+    try {
+      // Update the idea with the Jira key and mark as processed
+      const updatedIdea = await updateIdea(ideaToJira.ideaId, {
+        jiraKey: jiraKey,
+        status: 'PROCESSED'
+      });
+      
+      // Update local state
+      setIdeas(prev => prev.map(i => i.ideaId === ideaToJira.ideaId ? updatedIdea : i));
+      setIdeaToJira(null);
+      setSelectedIdea(null);
+    } catch (err) {
+      console.error('Error updating idea with Jira key:', err);
       throw err;
     }
   };
@@ -1859,6 +1879,10 @@ function IdeasTab() {
             setIdeaToConvert(selectedIdea);
             setSelectedIdea(null);
           }}
+          onCreateJiraTicket={() => {
+            setIdeaToJira(selectedIdea);
+            setSelectedIdea(null);
+          }}
         />
       )}
 
@@ -1868,6 +1892,15 @@ function IdeasTab() {
           idea={ideaToConvert}
           onClose={() => setIdeaToConvert(null)}
           onConvert={(projectData) => handleConvertToProject(projectData, ideaToConvert.ideaId)}
+        />
+      )}
+
+      {/* Create Jira Ticket Modal - ACRM-30 */}
+      {ideaToJira && (
+        <CreateJiraTicketModal
+          idea={ideaToJira}
+          onClose={() => setIdeaToJira(null)}
+          onCreated={handleCreateJiraTicket}
         />
       )}
     </div>
@@ -2146,7 +2179,7 @@ function CaptureIdeaModal({ onClose, onCreate }) {
 /**
  * Idea Detail Modal
  */
-function IdeaDetailModal({ idea, statusConfig, onClose, onUpdate, onDelete, onConvertToProject }) {
+function IdeaDetailModal({ idea, statusConfig, onClose, onUpdate, onDelete, onConvertToProject, onCreateJiraTicket }) {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
     title: idea.title || '',
@@ -2333,17 +2366,32 @@ function IdeaDetailModal({ idea, statusConfig, onClose, onUpdate, onDelete, onCo
 
               {/* Convert to Project Button */}
               {canConvert && (
-                <div style={{ marginTop: '20px' }}>
+                <div style={{ marginTop: '20px', display: 'flex', gap: '12px' }}>
                   <button
                     onClick={onConvertToProject}
                     className="btn btn-primary"
-                    style={{ width: '100%' }}
+                    style={{ flex: 1 }}
                   >
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ marginRight: '8px' }}>
                       <path d="M14.5 3a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h13zm-13-1A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2h-13z"/>
                       <path d="M3 5.5a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5zM3 8a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9A.5.5 0 0 1 3 8zm0 2.5a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1-.5-.5z"/>
                     </svg>
                     Convert to Project
+                  </button>
+                  <button
+                    onClick={onCreateJiraTicket}
+                    className="btn btn-secondary"
+                    style={{ 
+                      flex: 1,
+                      background: 'linear-gradient(135deg, rgba(0, 82, 204, 0.1) 0%, rgba(38, 132, 255, 0.1) 100%)',
+                      border: '1px solid rgba(0, 82, 204, 0.3)',
+                      color: '#0052CC'
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ marginRight: '8px' }}>
+                      <path d="M12.001 2c-5.523 0-10 4.477-10 10s4.477 10 10 10 10-4.477 10-10-4.477-10-10-10zm0 18c-4.411 0-8-3.589-8-8s3.589-8 8-8 8 3.589 8 8-3.589 8-8 8zm1-13h-2v4h-4v2h4v4h2v-4h4v-2h-4z"/>
+                    </svg>
+                    Create Jira Ticket
                   </button>
                 </div>
               )}
@@ -2360,6 +2408,37 @@ function IdeaDetailModal({ idea, statusConfig, onClose, onUpdate, onDelete, onCo
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#10b981', fontSize: '13px' }}>
                     <span>✓</span>
                     <span>Converted to project</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Jira ticket indicator */}
+              {idea.jiraKey && (
+                <div style={{ 
+                  marginTop: idea.status === 'PROCESSED' ? '12px' : '20px', 
+                  padding: '12px', 
+                  background: 'rgba(0, 82, 204, 0.05)', 
+                  borderRadius: '6px',
+                  border: '1px solid rgba(0, 82, 204, 0.15)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#0052CC', fontSize: '13px' }}>
+                      <span style={{ fontWeight: 600 }}>J</span>
+                      <span>Jira ticket created</span>
+                    </div>
+                    <a 
+                      href={`https://gouriertradingproject.atlassian.net/browse/${idea.jiraKey}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ 
+                        color: '#0052CC', 
+                        fontWeight: 500, 
+                        fontSize: '13px',
+                        textDecoration: 'none'
+                      }}
+                    >
+                      {idea.jiraKey} →
+                    </a>
                   </div>
                 </div>
               )}
@@ -2580,6 +2659,277 @@ function ConvertToProjectModal({ idea, onClose, onConvert }) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Create Jira Ticket Modal - ACRM-30
+ * Allows converting prompts/ideas into Jira tickets
+ */
+function CreateJiraTicketModal({ idea, onClose, onCreated }) {
+  const [formData, setFormData] = useState({
+    summary: idea.title || '',
+    description: idea.content || '',
+    projectKey: '',
+    issueType: 'Task',
+    priority: idea.priority === 'CRITICAL' ? 'Highest' : idea.priority === 'HIGH' ? 'High' : idea.priority === 'LOW' ? 'Low' : 'Medium'
+  });
+  const [jiraProjects, setJiraProjects] = useState([]);
+  const [issueTypes, setIssueTypes] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loadingProjects, setLoadingProjects] = useState(true);
+  const [loadingTypes, setLoadingTypes] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Load Jira projects on mount
+  useEffect(() => {
+    const loadProjects = async () => {
+      try {
+        const result = await jiraApi.listProjects();
+        setJiraProjects(result.projects || []);
+      } catch (err) {
+        setError('Failed to load Jira projects: ' + err.message);
+      } finally {
+        setLoadingProjects(false);
+      }
+    };
+    loadProjects();
+  }, []);
+
+  // Load issue types when project is selected
+  useEffect(() => {
+    if (formData.projectKey) {
+      const loadIssueTypes = async () => {
+        setLoadingTypes(true);
+        try {
+          const result = await jiraApi.getIssueTypes(formData.projectKey);
+          setIssueTypes(result.issueTypes || []);
+        } catch (err) {
+          console.error('Failed to load issue types:', err);
+        } finally {
+          setLoadingTypes(false);
+        }
+      };
+      loadIssueTypes();
+    }
+  }, [formData.projectKey]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!formData.summary.trim()) {
+      setError('Summary is required');
+      return;
+    }
+    if (!formData.projectKey) {
+      setError('Please select a Jira project');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await jiraApi.createIssue({
+        projectKey: formData.projectKey,
+        summary: formData.summary,
+        issueType: formData.issueType,
+        description: formData.description,
+        priority: formData.priority
+      });
+
+      await onCreated(result.key);
+    } catch (err) {
+      setError(err.message);
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,0.6)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000
+    }} onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--color-bg-secondary)',
+          borderRadius: '12px',
+          width: '100%',
+          maxWidth: '550px',
+          maxHeight: '90vh',
+          overflow: 'auto',
+          border: '1px solid var(--color-border)'
+        }}
+      >
+        {/* Header */}
+        <div style={{
+          padding: '20px 24px',
+          borderBottom: '1px solid var(--color-border)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          background: 'linear-gradient(135deg, rgba(0, 82, 204, 0.05) 0%, rgba(38, 132, 255, 0.05) 100%)'
+        }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '6px',
+            background: 'linear-gradient(135deg, #0052CC 0%, #2684FF 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'white',
+            fontWeight: 700,
+            fontSize: '14px'
+          }}>
+            J
+          </div>
+          <div>
+            <h3 style={{ margin: 0, color: 'var(--color-text-primary)' }}>Create Jira Ticket</h3>
+            <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+              from idea: {idea.title?.substring(0, 40)}{idea.title?.length > 40 ? '...' : ''}
+            </p>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div style={{ padding: '24px' }}>
+          {error && (
+            <div style={{
+              padding: '10px 12px',
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: '6px',
+              color: '#ef4444',
+              marginBottom: '16px',
+              fontSize: '13px'
+            }}>
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit}>
+            {/* Project Selection */}
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                Jira Project *
+              </label>
+              <select
+                value={formData.projectKey}
+                onChange={(e) => setFormData({ ...formData, projectKey: e.target.value, issueType: 'Task' })}
+                className="input"
+                style={{ width: '100%' }}
+                disabled={loadingProjects}
+              >
+                <option value="">{loadingProjects ? 'Loading projects...' : 'Select a project'}</option>
+                {jiraProjects.map(p => (
+                  <option key={p.key} value={p.key}>{p.key} - {p.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Issue Type Selection */}
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                Issue Type *
+              </label>
+              <select
+                value={formData.issueType}
+                onChange={(e) => setFormData({ ...formData, issueType: e.target.value })}
+                className="input"
+                style={{ width: '100%' }}
+                disabled={!formData.projectKey || loadingTypes}
+              >
+                {loadingTypes ? (
+                  <option value="">Loading issue types...</option>
+                ) : issueTypes.length > 0 ? (
+                  issueTypes.filter(t => !t.subtask).map(t => (
+                    <option key={t.id} value={t.name}>{t.name}</option>
+                  ))
+                ) : (
+                  <>
+                    <option value="Epic">Epic</option>
+                    <option value="Story">Story</option>
+                    <option value="Task">Task</option>
+                    <option value="Bug">Bug</option>
+                  </>
+                )}
+              </select>
+            </div>
+
+            {/* Summary */}
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                Summary *
+              </label>
+              <input
+                type="text"
+                value={formData.summary}
+                onChange={(e) => setFormData({ ...formData, summary: e.target.value })}
+                className="input"
+                style={{ width: '100%' }}
+                placeholder="Brief summary of the ticket"
+              />
+            </div>
+
+            {/* Description */}
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                Description
+              </label>
+              <textarea
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="input"
+                style={{ width: '100%', minHeight: '120px', resize: 'vertical' }}
+                placeholder="Detailed description..."
+              />
+            </div>
+
+            {/* Priority */}
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                Priority
+              </label>
+              <select
+                value={formData.priority}
+                onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
+                className="input"
+                style={{ width: '100%' }}
+              >
+                <option value="Lowest">Lowest</option>
+                <option value="Low">Low</option>
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+                <option value="Highest">Highest</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-secondary" onClick={onClose} disabled={loading}>
+                Cancel
+              </button>
+              <button 
+                type="submit" 
+                className="btn btn-primary" 
+                disabled={loading || !formData.projectKey}
+                style={{ 
+                  background: 'linear-gradient(135deg, #0052CC 0%, #2684FF 100%)',
+                  border: 'none'
+                }}
+              >
+                {loading ? 'Creating...' : 'Create Ticket'}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );
