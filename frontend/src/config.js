@@ -9,7 +9,7 @@ export const cognitoConfig = {
 
 export const apiConfig = {
   // CRM API endpoints (same API Gateway as portfolio)
-  baseUrl: 'https://y66jc4g9f2.execute-api.us-east-1.amazonaws.com/prod',
+  baseUrl: 'https://vzgke5g07h.execute-api.us-east-1.amazonaws.com/prod',
 };
 
 export const adminConfig = {

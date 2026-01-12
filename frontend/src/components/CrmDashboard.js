@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Gantt } from '@svar-ui/react-gantt';
 import '@svar-ui/react-gantt/all.css';
 import { listProjects, createProject, updateProject, updateProjectStatus, deleteProject, listIdeas, createIdea, updateIdea, deleteIdea, listTasks, createTask, updateTask, deleteTask, batchUpdateTasks } from '../services/crmApi';
+import jiraApi from '../services/jiraApi';
 
 /**
  * CRM Dashboard - Main entry point for Personal CRM
@@ -3634,8 +3635,91 @@ function EditTaskModal({ task, projects, allTasks, links, onClose, onTaskUpdated
 
 /**
  * Jira Tab - Synchronization status and controls
+ * ACRM-27: Jira API Integration
  */
 function JiraTab() {
+  const [connectionStatus, setConnectionStatus] = useState({ loading: true, connected: false, user: null, error: null });
+  const [jiraProjects, setJiraProjects] = useState([]);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [projectIssues, setProjectIssues] = useState({ issues: [], total: 0, statusCounts: {} });
+  const [loadingIssues, setLoadingIssues] = useState(false);
+
+  // Test Jira connection on mount
+  useEffect(() => {
+    const testConnection = async () => {
+      try {
+        const result = await jiraApi.testConnection();
+        setConnectionStatus({
+          loading: false,
+          connected: result.connected,
+          user: result.user,
+          error: null
+        });
+        
+        if (result.connected) {
+          // Load Jira projects
+          const projectsResult = await jiraApi.listProjects();
+          setJiraProjects(projectsResult.projects || []);
+        }
+      } catch (err) {
+        setConnectionStatus({
+          loading: false,
+          connected: false,
+          user: null,
+          error: err.message
+        });
+      }
+    };
+    testConnection();
+  }, []);
+
+  // Load issues when a project is selected
+  const loadProjectIssues = async (projectKey) => {
+    setLoadingIssues(true);
+    try {
+      const result = await jiraApi.getProjectIssues(projectKey, { maxResults: 50 });
+      setProjectIssues(result);
+    } catch (err) {
+      console.error('Error loading issues:', err);
+    } finally {
+      setLoadingIssues(false);
+    }
+  };
+
+  const handleProjectSelect = (project) => {
+    setSelectedProject(project);
+    loadProjectIssues(project.key);
+  };
+
+  const handleRefresh = async () => {
+    setConnectionStatus(prev => ({ ...prev, loading: true }));
+    try {
+      const result = await jiraApi.testConnection();
+      setConnectionStatus({
+        loading: false,
+        connected: result.connected,
+        user: result.user,
+        error: null
+      });
+      
+      if (result.connected) {
+        const projectsResult = await jiraApi.listProjects();
+        setJiraProjects(projectsResult.projects || []);
+        
+        if (selectedProject) {
+          loadProjectIssues(selectedProject.key);
+        }
+      }
+    } catch (err) {
+      setConnectionStatus({
+        loading: false,
+        connected: false,
+        user: null,
+        error: err.message
+      });
+    }
+  };
+
   return (
     <div>
       <div style={{ 
@@ -3645,12 +3729,12 @@ function JiraTab() {
         marginBottom: '24px'
       }}>
         <h2 style={{ margin: 0, color: 'var(--color-text-primary)' }}>Jira Integration</h2>
-        <button className="btn btn-secondary">
+        <button className="btn btn-secondary" onClick={handleRefresh} disabled={connectionStatus.loading}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ marginRight: '6px' }}>
             <path fillRule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
             <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
           </svg>
-          Sync Now
+          {connectionStatus.loading ? 'Syncing...' : 'Sync Now'}
         </button>
       </div>
 
@@ -3676,7 +3760,7 @@ function JiraTab() {
               Jira Cloud
             </div>
             <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
-              gouriertradingproject.atlassian.net
+              {connectionStatus.user?.emailAddress || 'gouriertradingproject.atlassian.net'}
             </div>
           </div>
           <div style={{ 
@@ -3684,36 +3768,159 @@ function JiraTab() {
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            color: 'var(--color-accent-success)',
+            color: connectionStatus.loading 
+              ? 'var(--color-text-muted)' 
+              : connectionStatus.connected 
+                ? 'var(--color-accent-success)' 
+                : 'var(--color-danger)',
             fontSize: '13px'
           }}>
             <div style={{ 
               width: '8px', 
               height: '8px', 
               borderRadius: '50%', 
-              background: 'var(--color-accent-success)' 
+              background: connectionStatus.loading 
+                ? 'var(--color-text-muted)' 
+                : connectionStatus.connected 
+                  ? 'var(--color-accent-success)' 
+                  : 'var(--color-danger)'
             }} />
-            Connected
+            {connectionStatus.loading ? 'Checking...' : connectionStatus.connected ? 'Connected' : 'Disconnected'}
           </div>
         </div>
+        {connectionStatus.error && (
+          <div style={{ marginTop: '12px', padding: '8px', background: 'rgba(255,0,0,0.1)', borderRadius: '4px', color: 'var(--color-danger)', fontSize: '13px' }}>
+            Error: {connectionStatus.error}
+          </div>
+        )}
       </div>
 
-      {/* Linked Projects */}
+      {/* Jira Projects Grid */}
       <h3 style={{ 
         color: 'var(--color-text-primary)', 
         marginBottom: '16px',
         fontSize: '16px'
       }}>
-        Linked Projects
+        Jira Projects ({jiraProjects.length})
       </h3>
       
-      <div className="card" style={{ textAlign: 'center', padding: '32px' }}>
-        <p style={{ color: 'var(--color-text-muted)', margin: 0 }}>
-          No projects linked to Jira yet.
-          <br />
-          Link a CRM project to a Jira project to enable sync.
-        </p>
-      </div>
+      {jiraProjects.length === 0 ? (
+        <div className="card" style={{ textAlign: 'center', padding: '32px' }}>
+          <p style={{ color: 'var(--color-text-muted)', margin: 0 }}>
+            {connectionStatus.loading ? 'Loading projects...' : 'No Jira projects found.'}
+          </p>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+          {jiraProjects.map(project => (
+            <div 
+              key={project.id} 
+              className="card" 
+              onClick={() => handleProjectSelect(project)}
+              style={{ 
+                cursor: 'pointer', 
+                border: selectedProject?.key === project.key ? '2px solid var(--color-accent-primary)' : '1px solid var(--color-border)',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {project.avatarUrl && (
+                  <img src={project.avatarUrl} alt="" style={{ width: '32px', height: '32px', borderRadius: '4px' }} />
+                )}
+                <div>
+                  <div style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>{project.name}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{project.key}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Selected Project Issues */}
+      {selectedProject && (
+        <>
+          <h3 style={{ 
+            color: 'var(--color-text-primary)', 
+            marginBottom: '16px',
+            fontSize: '16px'
+          }}>
+            {selectedProject.name} Issues ({projectIssues.total})
+          </h3>
+
+          {/* Status counts */}
+          {Object.keys(projectIssues.statusCounts).length > 0 && (
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+              {Object.entries(projectIssues.statusCounts).map(([status, count]) => (
+                <div key={status} className="card" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ 
+                    width: '8px', 
+                    height: '8px', 
+                    borderRadius: '50%', 
+                    background: status === 'Done' ? 'var(--color-accent-success)' : status === 'In Progress' ? 'var(--color-accent-warning)' : 'var(--color-text-muted)'
+                  }} />
+                  <span style={{ fontSize: '13px' }}>{status}: <strong>{count}</strong></span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Issues table */}
+          <div className="card" style={{ overflow: 'auto' }}>
+            {loadingIssues ? (
+              <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '24px' }}>Loading issues...</p>
+            ) : projectIssues.issues.length === 0 ? (
+              <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '24px' }}>No issues found.</p>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
+                    <th style={{ textAlign: 'left', padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 500, fontSize: '13px' }}>Key</th>
+                    <th style={{ textAlign: 'left', padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 500, fontSize: '13px' }}>Summary</th>
+                    <th style={{ textAlign: 'left', padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 500, fontSize: '13px' }}>Type</th>
+                    <th style={{ textAlign: 'left', padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 500, fontSize: '13px' }}>Status</th>
+                    <th style={{ textAlign: 'left', padding: '12px 8px', color: 'var(--color-text-secondary)', fontWeight: 500, fontSize: '13px' }}>Assignee</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {projectIssues.issues.map(issue => (
+                    <tr key={issue.key} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                      <td style={{ padding: '10px 8px' }}>
+                        <a 
+                          href={`https://gouriertradingproject.atlassian.net/browse/${issue.key}`} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          style={{ color: 'var(--color-accent-primary)', textDecoration: 'none', fontWeight: 500 }}
+                        >
+                          {issue.key}
+                        </a>
+                      </td>
+                      <td style={{ padding: '10px 8px', color: 'var(--color-text-primary)', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {issue.summary}
+                      </td>
+                      <td style={{ padding: '10px 8px', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{issue.issueType}</td>
+                      <td style={{ padding: '10px 8px' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          fontWeight: 500,
+                          background: issue.statusCategory === 'Done' ? 'rgba(0,200,83,0.15)' : issue.statusCategory === 'In Progress' ? 'rgba(255,171,0,0.15)' : 'rgba(128,128,128,0.15)',
+                          color: issue.statusCategory === 'Done' ? 'var(--color-accent-success)' : issue.statusCategory === 'In Progress' ? 'var(--color-accent-warning)' : 'var(--color-text-secondary)'
+                        }}>
+                          {issue.status}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 8px', color: 'var(--color-text-secondary)', fontSize: '13px' }}>{issue.assignee || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
