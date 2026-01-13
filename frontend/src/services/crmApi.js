@@ -155,6 +155,25 @@ export const getPendingIdeas = async () => {
 };
 
 /**
+ * Get processing history and audit trail (ACRM-35)
+ * @param {Object} options - { limit }
+ */
+export const getProcessingHistory = async (options = {}) => {
+  const params = new URLSearchParams();
+  if (options.limit) params.append('limit', options.limit);
+  
+  const queryString = params.toString();
+  const url = `${CRM_BASE_URL}/ideas/history${queryString ? `?${queryString}` : ''}`;
+  
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: getAuthHeaders(),
+  });
+  
+  return handleResponse(response);
+};
+
+/**
  * Get a single idea by ID
  * @param {string} ideaId 
  */
@@ -312,6 +331,7 @@ const crmApi = {
   // Ideas
   listIdeas,
   getPendingIdeas,
+  getProcessingHistory,
   getIdea,
   createIdea,
   updateIdea,

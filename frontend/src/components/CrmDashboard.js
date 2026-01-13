@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Gantt } from '@svar-ui/react-gantt';
 import '@svar-ui/react-gantt/all.css';
-import { listProjects, createProject, updateProject, updateProjectStatus, deleteProject, listIdeas, createIdea, updateIdea, deleteIdea, listTasks, createTask, updateTask, deleteTask, batchUpdateTasks } from '../services/crmApi';
+import { listProjects, createProject, updateProject, updateProjectStatus, deleteProject, listIdeas, createIdea, updateIdea, deleteIdea, listTasks, createTask, updateTask, deleteTask, batchUpdateTasks, getProcessingHistory } from '../services/crmApi';
 import jiraApi from '../services/jiraApi';
 
 /**
@@ -1657,6 +1657,140 @@ function ProjectDetailModal({ project, onClose, onUpdate, onDelete, priorityColo
 }
 
 /**
+ * ACRM-35: Processing History Widget - Shows audit trail of processed ideas
+ */
+function ProcessingHistoryWidget() {
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const data = await getProcessingHistory({ limit: 10 });
+        setHistory(data.history || []);
+      } catch (err) {
+        console.error('Error loading processing history:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadHistory();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="card" style={{ marginTop: '24px' }}>
+        <h4 style={{ margin: 0, color: 'var(--color-text-muted)' }}>Loading history...</h4>
+      </div>
+    );
+  }
+
+  if (history.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="card" style={{ marginTop: '24px' }}>
+      <div 
+        style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          cursor: 'pointer'
+        }}
+        onClick={() => setExpanded(!expanded)}
+      >
+        <h4 style={{ margin: 0, color: 'var(--color-text-primary)' }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style={{ marginRight: '8px', verticalAlign: 'middle' }}>
+            <path d="M1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0zM8 0a8 8 0 100 16A8 8 0 008 0zm.5 4.75a.75.75 0 00-1.5 0v3.5a.75.75 0 00.471.696l2.5 1a.75.75 0 00.558-1.392L8.5 7.742V4.75z"/>
+          </svg>
+          Processing History ({history.length})
+        </h4>
+        <svg 
+          width="16" 
+          height="16" 
+          viewBox="0 0 16 16" 
+          fill="currentColor"
+          style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
+        >
+          <path d="M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z"/>
+        </svg>
+      </div>
+      
+      {expanded && (
+        <div style={{ marginTop: '16px' }}>
+          {history.map((item, index) => (
+            <div 
+              key={item.ideaId}
+              style={{
+                padding: '12px',
+                background: 'var(--color-bg-secondary)',
+                borderRadius: '6px',
+                marginBottom: index < history.length - 1 ? '8px' : 0
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '4px' }}>
+                    {item.processedSummary || item.originalTitle}
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                    Original: {item.originalTitle}
+                  </div>
+                </div>
+                {item.jiraKey && (
+                  <a
+                    href={`https://gouriertradingproject.atlassian.net/browse/${item.jiraKey}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      background: 'linear-gradient(135deg, #0052CC 0%, #2684FF 100%)',
+                      color: 'white',
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      textDecoration: 'none',
+                      marginLeft: '12px'
+                    }}
+                  >
+                    {item.jiraKey}
+                  </a>
+                )}
+              </div>
+              <div style={{ 
+                display: 'flex', 
+                gap: '16px', 
+                marginTop: '8px', 
+                fontSize: '12px', 
+                color: 'var(--color-text-muted)' 
+              }}>
+                <span>Project: {item.jiraProject || 'N/A'}</span>
+                <span>Source: {item.source || 'CRM'}</span>
+                <span>Processed: {item.processedAt ? new Date(item.processedAt).toLocaleDateString() : 'N/A'}</span>
+              </div>
+              {item.aiNotes && (
+                <div style={{ 
+                  marginTop: '8px', 
+                  padding: '8px', 
+                  background: 'var(--color-bg-primary)', 
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                  color: 'var(--color-text-secondary)'
+                }}>
+                  <strong>AI Notes:</strong> {item.aiNotes}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * Ideas Tab - Capture and manage ideas/prompts
  */
 function IdeasTab() {
@@ -1903,6 +2037,9 @@ function IdeasTab() {
           onCreated={handleCreateJiraTicket}
         />
       )}
+
+      {/* Processing History - ACRM-35 */}
+      <ProcessingHistoryWidget />
     </div>
   );
 }
